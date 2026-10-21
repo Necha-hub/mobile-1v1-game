@@ -1,0 +1,1879 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>모바일 1:1 대전 게임 (창 vs 검) - v1.4 다크소울 심리전 빌드</title>
+<style>
+  * { box-sizing: border-box; }
+  body, html {
+    margin: 0; padding: 0; width: 100%; height: 100%;
+    background: #121212; touch-action: none; overflow: hidden;
+    font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, Helvetica, Arial, sans-serif;
+    color: #eee;
+  }
+  #gameCanvas { display: block; width: 100%; height: 100%; }
+
+  /* UI Layout */
+  .ui-layer {
+    position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+    pointer-events: none;
+  }
+  .btn {
+    position: absolute; width: 41vw; max-width: 240px; height: 11.5vh; max-height: 86px;
+    background: rgba(255, 255, 255, 0.08); border: 2px solid rgba(255, 255, 255, 0.25);
+    border-radius: 14px; color: #f3f4f6; font-size: 1.02rem; font-weight: 700;
+    display: flex; flex-direction: column; justify-content: center; align-items: center;
+    pointer-events: auto; user-select: none; -webkit-user-select: none;
+    transition: background 0.05s, transform 0.05s, box-shadow 0.15s, border-color 0.15s;
+    cursor: pointer; backdrop-filter: blur(4px);
+  }
+  .btn .sub-key {
+    font-size: 0.68rem; font-weight: 500; opacity: 0.72; margin-top: 3px;
+  }
+  .btn:active, .btn.pressed {
+    background: rgba(255, 255, 255, 0.28);
+  }
+  .btn.charging {
+    background: rgba(245, 158, 11, 0.35) !important;
+    border-color: #f59e0b !important;
+    box-shadow: 0 0 18px rgba(245, 158, 11, 0.6) !important;
+  }
+
+  /* 1P (하단) */
+  #p1-evade { bottom: 2.5%; left: 5%; border-color: #3498db; box-shadow: 0 0 12px rgba(52, 152, 219, 0.2); }
+  #p1-attack { bottom: 2.5%; right: 5%; border-color: #3498db; box-shadow: 0 0 12px rgba(52, 152, 219, 0.2); }
+  #p1-evade:active, #p1-attack:active, #p1-evade.pressed, #p1-attack.pressed {
+    transform: scale(0.97);
+  }
+
+  /* 2P (상단) - 180도 회전 */
+  #p2-evade { top: 2.5%; right: 5%; transform: rotate(180deg); border-color: #e74c3c; box-shadow: 0 0 12px rgba(231, 76, 60, 0.2); }
+  #p2-attack { top: 2.5%; left: 5%; transform: rotate(180deg); border-color: #e74c3c; box-shadow: 0 0 12px rgba(231, 76, 60, 0.2); }
+  #p2-evade:active, #p2-attack:active, #p2-evade.pressed, #p2-attack.pressed {
+    transform: rotate(180deg) scale(0.97);
+  }
+
+  /* 스코어 및 상태 HUD (좌측 중앙 - 접기/펼치기 지원) */
+  #hud {
+    position: absolute; top: 50%; left: 12px; transform: translateY(-50%);
+    pointer-events: auto; z-index: 20; line-height: 1.5;
+    background: rgba(18, 18, 22, 0.86);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 12px; padding: 10px 13px;
+    backdrop-filter: blur(6px);
+    width: 210px;
+    transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.2s;
+  }
+  #hud.collapsed {
+    transform: translate(calc(-100% - 14px), -50%);
+  }
+  .hud-header {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-bottom: 6px; padding-bottom: 4px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  }
+  .hud-title {
+    font-size: 0.68rem; font-weight: 700; color: #9ca3af;
+    letter-spacing: 0.04em;
+  }
+  .score-row {
+    font-size: 1.0rem; font-weight: 800; display: flex; align-items: center; gap: 6px;
+  }
+  .stat-sub {
+    font-size: 0.68rem; color: rgba(255, 255, 255, 0.58); font-weight: 500;
+  }
+  .rule-badge {
+    margin-top: 7px; padding-top: 6px;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+    font-size: 0.65rem; color: #cbd5e1; font-weight: 600;
+    line-height: 1.45;
+  }
+  .rule-badge span { display: block; }
+
+  /* 테스트 툴바 (우측 중앙 - 접기/펼치기 지원) */
+  #test-panel {
+    position: absolute; top: 50%; right: 12px; transform: translateY(-50%);
+    display: flex; flex-direction: column; gap: 5px;
+    background: rgba(20, 20, 24, 0.88);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 12px; padding: 9px;
+    pointer-events: auto; z-index: 20;
+    backdrop-filter: blur(6px);
+    width: 142px;
+    transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.2s;
+  }
+  #test-panel.collapsed {
+    transform: translate(calc(100% + 14px), -50%);
+  }
+  .panel-header {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-bottom: 2px;
+  }
+  .panel-title {
+    font-size: 0.68rem; font-weight: 700; color: #9ca3af;
+    text-transform: uppercase; letter-spacing: 0.05em;
+  }
+  .mini-close-btn {
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 5px; color: #e5e7eb;
+    font-size: 0.65rem; font-weight: 700;
+    padding: 2px 6px; cursor: pointer;
+  }
+  .mini-close-btn:hover { background: rgba(255, 255, 255, 0.22); }
+
+  /* 좌/우 사이드 열기 탭 버튼 (패널이 닫혔을 때 가장자리에 표시) */
+  .side-tab-btn {
+    position: absolute; top: 50%; transform: translateY(-50%);
+    z-index: 19; pointer-events: auto;
+    background: rgba(24, 24, 30, 0.88);
+    border: 1px solid rgba(255, 255, 255, 0.22);
+    color: #f3f4f6; font-size: 0.72rem; font-weight: 700;
+    padding: 10px 7px; cursor: pointer;
+    backdrop-filter: blur(6px);
+    writing-mode: vertical-rl; text-orientation: mixed;
+    letter-spacing: 0.06em;
+    transition: opacity 0.2s, transform 0.2s, background 0.15s;
+    user-select: none; -webkit-user-select: none;
+  }
+  .side-tab-btn:hover { background: rgba(52, 152, 219, 0.3); }
+  #btn-open-hud {
+    left: 0; border-left: none;
+    border-radius: 0 10px 10px 0;
+    box-shadow: 2px 0 10px rgba(0,0,0,0.5);
+  }
+  #btn-open-panel {
+    right: 0; border-right: none;
+    border-radius: 10px 0 0 10px;
+    box-shadow: -2px 0 10px rgba(0,0,0,0.5);
+  }
+  .side-tab-btn.hidden-tab {
+    opacity: 0; pointer-events: none;
+  }
+  .tool-btn {
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    border-radius: 7px; color: #e5e7eb;
+    padding: 6px 7px; font-size: 0.73rem; font-weight: 600;
+    cursor: pointer; text-align: center;
+    transition: background 0.15s, border-color 0.15s;
+  }
+  .tool-btn:hover { background: rgba(255, 255, 255, 0.15); }
+  .tool-btn.active {
+    background: rgba(52, 152, 219, 0.25);
+    border-color: #3498db; color: #fff;
+  }
+  .tool-btn.easy-bot {
+    background: rgba(46, 204, 113, 0.22);
+    border-color: #2ecc71; color: #a7f3d0;
+  }
+  .tool-btn.swap-highlight {
+    background: rgba(155, 89, 182, 0.25);
+    border-color: #a855f7; color: #f3e8ff;
+  }
+
+  /* 중앙 메시지 보드 */
+  #msg {
+    position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    color: #ffcc00; font-size: clamp(1.5rem, 4.8vw, 2.3rem); font-weight: 800; text-align: center;
+    text-shadow: 0 4px 14px rgba(0,0,0,0.9); pointer-events: none; z-index: 15;
+    white-space: nowrap;
+  }
+  #sub-msg {
+    position: absolute; top: calc(50% + 36px); left: 50%; transform: translate(-50%, -50%);
+    color: #cbd5e1; font-size: 0.9rem; font-weight: 600; text-align: center;
+    text-shadow: 0 2px 8px rgba(0,0,0,0.9); pointer-events: none; z-index: 15;
+    white-space: nowrap;
+  }
+
+  @media (max-width: 480px) {
+    #hud { left: 8px; padding: 8px 10px; width: 176px; }
+    .score-row { font-size: 0.85rem; }
+    .rule-badge { font-size: 0.6rem; }
+    #test-panel { right: 8px; width: 122px; padding: 7px; gap: 4px; }
+    .tool-btn { font-size: 0.65rem; padding: 5px 5px; }
+  }
+</style>
+</head>
+<body>
+
+<canvas id="gameCanvas"></canvas>
+
+<div class="ui-layer">
+  <!-- 2P 상단 컨트롤 (180도 회전) -->
+  <div id="p2-attack" class="btn">
+    <span id="p2-attack-label">공격 (검)</span>
+    <span class="sub-key">[탭: 공격 / 0.5초 홀드: 가드붕괴]</span>
+  </div>
+  <div id="p2-evade" class="btn">
+    <span>백스텝 / 구르기</span>
+    <span class="sub-key">[Key: D / 더블탭: 뒤잡기구르기]</span>
+  </div>
+
+  <!-- 1P 하단 컨트롤 -->
+  <div id="p1-evade" class="btn">
+    <span>백스텝 / 구르기</span>
+    <span class="sub-key">[Key: ← / 더블탭: 뒤잡기구르기]</span>
+  </div>
+  <div id="p1-attack" class="btn">
+    <span id="p1-attack-label">공격 (창)</span>
+    <span class="sub-key">[탭: 공격 / 0.5초 홀드: 가드붕괴]</span>
+  </div>
+</div>
+
+<!-- 좌/우 메뉴가 닫혔을 때 가장자리에 나타나는 열기 탭 -->
+<button id="btn-open-hud" class="side-tab-btn hidden-tab" type="button">📊 점수·가이드 ▸</button>
+<button id="btn-open-panel" class="side-tab-btn hidden-tab" type="button">◂ ⚙️ 설정 메뉴</button>
+
+<!-- 스코어 및 밸런스 요약 HUD (좌측 메뉴) -->
+<div id="hud">
+  <div class="hud-header">
+    <span class="hud-title">SCORE &amp; GUIDE</span>
+    <button id="btn-close-hud" class="mini-close-btn" type="button">◀ 접기</button>
+  </div>
+  <div id="score-p2" class="score-row" style="color:#e74c3c;">2P (검): 0</div>
+  <div id="stat-p2" class="stat-sub">사거리 95 / 전진 55 / 12F·22F</div>
+  <div style="height: 6px;"></div>
+  <div id="score-p1" class="score-row" style="color:#3498db;">1P (창): 0</div>
+  <div id="stat-p1" class="stat-sub">사거리 165 / 전진 25 / 10F·36F</div>
+  <div class="rule-badge">
+    <span style="color:#38bdf8;">🛡️ 대기 정면 = 오토가드(가드백)</span>
+    <span style="color:#fbbf24;">🔥 0.5초 홀드 = 차지 가드브레이크</span>
+    <span style="color:#f87171;">🗡️ 구르기 후 등 타격 = 뒤잡기 즉사</span>
+    <span style="color:#c084fc;">🧱 구석 가드백 = 벽 가드붕괴(스턴)</span>
+  </div>
+</div>
+
+<!-- 테스트 편의 컨트롤 패널 (우측 메뉴) -->
+<div id="test-panel">
+  <div class="panel-header">
+    <div class="panel-title">TEST LAB v1.4</div>
+    <button id="btn-close-panel" class="mini-close-btn" type="button">접기 ▶</button>
+  </div>
+  <button id="btn-ai" class="tool-btn active" type="button">모드: 2인 로컬</button>
+  <button id="btn-ai-diff" class="tool-btn easy-bot" type="button">AI: 쉬움(천천히)</button>
+  <button id="btn-swap" class="tool-btn swap-highlight" type="button">캐릭터 변경 [C]</button>
+  <button id="btn-debug" class="tool-btn active" type="button">판정가이드: ON</button>
+  <button id="btn-speed" class="tool-btn" type="button">배속: 1.0x</button>
+  <button id="btn-sound" class="tool-btn active" type="button">효과음: ON</button>
+  <button id="btn-reset" class="tool-btn" type="button">라운드/점수 리셋</button>
+</div>
+
+<div id="msg"></div>
+<div id="sub-msg"></div>
+
+<script>
+  const canvas = document.getElementById('gameCanvas');
+  const ctx = canvas.getContext('2d');
+
+  // 상수 정의
+  const CHARGE_THRESHOLD_FRAMES = 30; // 0.5초 (60fps 기준 30프레임) 홀드 시 차지 공격 발동
+  const TURN_AROUND_DELAY_FRAMES = 22; // 상대가 뒤로 넘어갔을 때 뒤돌아보기까지 걸리는 딜레이 프레임
+  const STAGGER_DURATION_FRAMES = 75; // 가드 브레이크 / 벽 가드 붕괴 시 스턴(Stagger) 지속 프레임
+  const WALL_DANGER_THRESHOLD = 16; // 벽면으로부터 등배수진 판정 여유 거리(px)
+
+  // 무기별 밸런스 프리셋 데이터
+  const WEAPON_SPECS = {
+    spear: {
+      type: 'spear',
+      label: '창',
+      color: '#3498db',
+      glowRgba: 'rgba(52, 152, 219, 0.25)',
+      activeRgba: 'rgba(52, 152, 219, 0.35)',
+      attackDist: 165,
+      attackWidth: 16,
+      attackActive: 10,
+      attackDuration: 36,
+      lungeDist: 25,
+      knockbackOnClash: 75,
+      guardPushback: 62, // 창 공격을 가드했을 때 밀려나는 거리
+      statText: '사거리 165 / 전진 25 / 10F·36F'
+    },
+    sword: {
+      type: 'sword',
+      label: '검',
+      color: '#e74c3c',
+      glowRgba: 'rgba(231, 76, 60, 0.25)',
+      activeRgba: 'rgba(231, 76, 60, 0.35)',
+      attackDist: 95,
+      attackWidth: 110,
+      attackActive: 12,
+      attackDuration: 22,
+      lungeDist: 55,
+      knockbackOnClash: 35,
+      guardPushback: 48, // 검 공격을 가드했을 때 밀려나는 거리
+      statText: '사거리 95 / 전진 55 / 12F·22F'
+    }
+  };
+
+  // 캐릭터 매치업 프리셋
+  const MATCHUPS = [
+    { p1: 'spear', p2: 'sword', desc: '1P 창 vs 2P 검' },
+    { p1: 'sword', p2: 'spear', desc: '1P 검 vs 2P 창' },
+    { p1: 'spear', p2: 'spear', desc: '1P 창 vs 2P 창 (미러)' },
+    { p1: 'sword', p2: 'sword', desc: '1P 검 vs 2P 검 (미러)' }
+  ];
+  let matchupIndex = 0;
+
+  // 테스트 옵션 상태
+  let aiMode = 'p2'; // 'p2' | 'p1' | 'none'
+  let aiDifficulty = 'easy'; // 'easy' | 'normal'
+  let showDebug = true;
+  let speedScale = 1.0;
+  let soundEnabled = true;
+  let frameAccumulator = 0;
+  let roundResetTimeout = null;
+
+  // Web Audio API 합성 사운드
+  let audioCtx = null;
+  function initAudio() {
+    if (!audioCtx) {
+      const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+      if (AudioContextClass) audioCtx = new AudioContextClass();
+    }
+    if (audioCtx && audioCtx.state === 'suspended') {
+      audioCtx.resume();
+    }
+  }
+
+  function playSound(type) {
+    if (!soundEnabled) return;
+    try {
+      initAudio();
+      if (!audioCtx) return;
+      const now = audioCtx.currentTime;
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+
+      if (type === 'spear') {
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(580, now);
+        osc.frequency.exponentialRampToValueAtTime(150, now + 0.12);
+        gain.gain.setValueAtTime(0.18, now);
+        gain.gain.linearRampToValueAtTime(0.01, now + 0.12);
+        osc.start(now);
+        osc.stop(now + 0.12);
+      } else if (type === 'sword') {
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(320, now);
+        osc.frequency.exponentialRampToValueAtTime(95, now + 0.15);
+        gain.gain.setValueAtTime(0.16, now);
+        gain.gain.linearRampToValueAtTime(0.01, now + 0.15);
+        osc.start(now);
+        osc.stop(now + 0.15);
+      } else if (type === 'charge_start') {
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(220, now);
+        osc.frequency.linearRampToValueAtTime(520, now + 0.25);
+        gain.gain.setValueAtTime(0.08, now);
+        gain.gain.linearRampToValueAtTime(0.01, now + 0.25);
+        osc.start(now);
+        osc.stop(now + 0.25);
+      } else if (type === 'charge_release') {
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(660, now);
+        osc.frequency.exponentialRampToValueAtTime(120, now + 0.22);
+        gain.gain.setValueAtTime(0.26, now);
+        gain.gain.linearRampToValueAtTime(0.01, now + 0.22);
+        osc.start(now);
+        osc.stop(now + 0.22);
+      } else if (type === 'guard_break') {
+        osc.type = 'square';
+        osc.frequency.setValueAtTime(190, now);
+        osc.frequency.exponentialRampToValueAtTime(55, now + 0.35);
+        gain.gain.setValueAtTime(0.3, now);
+        gain.gain.linearRampToValueAtTime(0.01, now + 0.35);
+        osc.start(now);
+        osc.stop(now + 0.35);
+      } else if (type === 'backstab') {
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(720, now);
+        osc.frequency.exponentialRampToValueAtTime(60, now + 0.38);
+        gain.gain.setValueAtTime(0.32, now);
+        gain.gain.linearRampToValueAtTime(0.01, now + 0.38);
+        osc.start(now);
+        osc.stop(now + 0.38);
+      } else if (type === 'backstep') {
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(240, now);
+        osc.frequency.exponentialRampToValueAtTime(140, now + 0.07);
+        gain.gain.setValueAtTime(0.1, now);
+        gain.gain.linearRampToValueAtTime(0.01, now + 0.07);
+        osc.start(now);
+        osc.stop(now + 0.07);
+      } else if (type === 'roll') {
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(180, now);
+        osc.frequency.exponentialRampToValueAtTime(420, now + 0.18);
+        gain.gain.setValueAtTime(0.14, now);
+        gain.gain.linearRampToValueAtTime(0.01, now + 0.18);
+        osc.start(now);
+        osc.stop(now + 0.18);
+      } else if (type === 'clash') {
+        osc.type = 'square';
+        osc.frequency.setValueAtTime(880, now);
+        osc.frequency.exponentialRampToValueAtTime(220, now + 0.22);
+        gain.gain.setValueAtTime(0.24, now);
+        gain.gain.linearRampToValueAtTime(0.01, now + 0.22);
+        osc.start(now);
+        osc.stop(now + 0.22);
+      } else if (type === 'guard') {
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(960, now);
+        osc.frequency.exponentialRampToValueAtTime(380, now + 0.16);
+        gain.gain.setValueAtTime(0.22, now);
+        gain.gain.linearRampToValueAtTime(0.01, now + 0.16);
+        osc.start(now);
+        osc.stop(now + 0.16);
+      } else if (type === 'hit') {
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(150, now);
+        osc.frequency.exponentialRampToValueAtTime(45, now + 0.32);
+        gain.gain.setValueAtTime(0.28, now);
+        gain.gain.linearRampToValueAtTime(0.01, now + 0.32);
+        osc.start(now);
+        osc.stop(now + 0.32);
+      } else if (type === 'swap') {
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(340, now);
+        osc.frequency.exponentialRampToValueAtTime(680, now + 0.09);
+        gain.gain.setValueAtTime(0.12, now);
+        gain.gain.linearRampToValueAtTime(0.01, now + 0.09);
+        osc.start(now);
+        osc.stop(now + 0.09);
+      }
+    } catch (err) {
+      // Ignore audio errors
+    }
+  }
+
+  let gameOver = false;
+  let clashEffectTimer = 0;
+  let clashY = 0;
+  let clashColor = '#ffcc00';
+  let wallFlashTimer = 0;
+  let wallFlashY = 0;
+  let screenShakeTimer = 0;
+  let particles = [];
+  let floatingTexts = [];
+
+  const players = {
+    p1: {
+      id: 'p1', slotLabel: '1P', name: '1P (창)', type: 'spear', color: '#3498db', score: 0,
+      y: window.innerHeight * 0.7, dir: -1, width: 36, height: 36,
+      state: 'idle', stateTimer: 0,
+      attackDist: 165, attackWidth: 16,
+      attackActive: 10, attackDuration: 36,
+      lungeDist: 25, knockbackOnClash: 75, guardPushback: 62,
+      lastEvadeTime: 0, aiCooldown: 0, aiWindup: 0, swingDir: 1,
+      guardVisualTimer: 0,
+      isHoldingAttack: false, chargeTimer: 0, isChargedAttack: false,
+      turnTimer: 0, backstabWindow: 0
+    },
+    p2: {
+      id: 'p2', slotLabel: '2P', name: '2P (검)', type: 'sword', color: '#e74c3c', score: 0,
+      y: window.innerHeight * 0.3, dir: 1, width: 36, height: 36,
+      state: 'idle', stateTimer: 0,
+      attackDist: 95, attackWidth: 110,
+      attackActive: 12, attackDuration: 22,
+      lungeDist: 55, knockbackOnClash: 35, guardPushback: 48,
+      lastEvadeTime: 0, aiCooldown: 0, aiWindup: 0, swingDir: 1,
+      guardVisualTimer: 0,
+      isHoldingAttack: false, chargeTimer: 0, isChargedAttack: false,
+      turnTimer: 0, backstabWindow: 0
+    }
+  };
+
+  function applyWeaponSpec(player, weaponKey) {
+    const spec = WEAPON_SPECS[weaponKey];
+    player.type = spec.type;
+    player.name = `${player.slotLabel} (${spec.label})`;
+    player.color = spec.color;
+    player.attackDist = spec.attackDist;
+    player.attackWidth = spec.attackWidth;
+    player.attackActive = spec.attackActive;
+    player.attackDuration = spec.attackDuration;
+    player.lungeDist = spec.lungeDist;
+    player.knockbackOnClash = spec.knockbackOnClash;
+    player.guardPushback = spec.guardPushback;
+
+    const atkBtn = document.getElementById(`${player.id}-attack`);
+    const evadeBtn = document.getElementById(`${player.id}-evade`);
+    const atkLabel = document.getElementById(`${player.id}-attack-label`);
+    const scoreEl = document.getElementById(`score-${player.id}`);
+    const statEl = document.getElementById(`stat-${player.id}`);
+
+    if (atkLabel) atkLabel.innerText = `공격 (${spec.label})`;
+    if (atkBtn) {
+      atkBtn.style.borderColor = spec.color;
+      atkBtn.style.boxShadow = `0 0 12px ${spec.glowRgba}`;
+    }
+    if (evadeBtn) {
+      evadeBtn.style.borderColor = spec.color;
+      evadeBtn.style.boxShadow = `0 0 12px ${spec.glowRgba}`;
+    }
+    if (scoreEl) scoreEl.style.color = spec.color;
+    if (statEl) statEl.innerText = spec.statText;
+  }
+
+  function updateScore() {
+    document.getElementById('score-p1').innerText = `${players.p1.name}: ${players.p1.score}`;
+    document.getElementById('score-p2').innerText = `${players.p2.name}: ${players.p2.score}`;
+    const openHudBtn = document.getElementById('btn-open-hud');
+    if (openHudBtn) {
+      openHudBtn.innerText = `📊 ${players.p2.score} : ${players.p1.score} ▸`;
+    }
+  }
+
+  function cycleCharacterSwap() {
+    matchupIndex = (matchupIndex + 1) % MATCHUPS.length;
+    const m = MATCHUPS[matchupIndex];
+    applyWeaponSpec(players.p1, m.p1);
+    applyWeaponSpec(players.p2, m.p2);
+    updateScore();
+    playSound('swap');
+    resetRound();
+    document.getElementById('msg').innerText = m.desc;
+    document.getElementById('sub-msg').innerText = '캐릭터(무기)가 변경되었습니다';
+    if (roundResetTimeout) clearTimeout(roundResetTimeout);
+    roundResetTimeout = setTimeout(() => {
+      document.getElementById('msg').innerText = '';
+      document.getElementById('sub-msg').innerText = '';
+    }, 900);
+  }
+
+  function getArenaMargin() {
+    return canvas.height * 0.16;
+  }
+
+  function clampPlayerY(p) {
+    const margin = getArenaMargin();
+    p.y = Math.max(margin, Math.min(canvas.height - margin, p.y));
+  }
+
+  function isNearArenaWall(p, pushDir) {
+    const margin = getArenaMargin();
+    if (pushDir < 0) return p.y <= margin + WALL_DANGER_THRESHOLD;
+    if (pushDir > 0) return p.y >= (canvas.height - margin) - WALL_DANGER_THRESHOLD;
+    return (p.y <= margin + WALL_DANGER_THRESHOLD) || (p.y >= (canvas.height - margin) - WALL_DANGER_THRESHOLD);
+  }
+
+  function resize() {
+    const prevH = canvas.height || window.innerHeight;
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+    if (prevH > 0) {
+      players.p1.y = (players.p1.y / prevH) * canvas.height;
+      players.p2.y = (players.p2.y / prevH) * canvas.height;
+      clampPlayerY(players.p1);
+      clampPlayerY(players.p2);
+    }
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  function spawnParticles(x, y, color, count) {
+    for (let i = 0; i < count; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const speed = 2 + Math.random() * 6;
+      particles.push({
+        x, y,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed,
+        life: 14 + Math.floor(Math.random() * 10),
+        maxLife: 24,
+        color,
+        size: 2 + Math.random() * 3
+      });
+    }
+  }
+
+  function spawnFloatingText(x, y, text, color) {
+    floatingTexts.push({
+      x, y, text, color,
+      life: 30, maxLife: 30
+    });
+  }
+
+  function showMessage(text, subText = '') {
+    document.getElementById('msg').innerText = text;
+    document.getElementById('sub-msg').innerText = subText;
+    if (roundResetTimeout) clearTimeout(roundResetTimeout);
+    roundResetTimeout = setTimeout(() => {
+      document.getElementById('msg').innerText = '';
+      document.getElementById('sub-msg').innerText = '';
+      resetRound();
+    }, 1850);
+  }
+
+  function clearChargeUI(p) {
+    p.isHoldingAttack = false;
+    p.chargeTimer = 0;
+    const btn = document.getElementById(`${p.id}-attack`);
+    if (btn) btn.classList.remove('charging');
+  }
+
+  function resetRound() {
+    if (roundResetTimeout) {
+      clearTimeout(roundResetTimeout);
+      roundResetTimeout = null;
+    }
+    document.getElementById('msg').innerText = '';
+    document.getElementById('sub-msg').innerText = '';
+
+    [players.p1, players.p2].forEach((p, idx) => {
+      p.y = canvas.height * (idx === 0 ? 0.7 : 0.3);
+      p.dir = idx === 0 ? -1 : 1;
+      p.state = 'idle';
+      p.stateTimer = 0;
+      p.aiCooldown = 30;
+      p.aiWindup = 0;
+      p.guardVisualTimer = 0;
+      p.isChargedAttack = false;
+      p.turnTimer = 0;
+      p.backstabWindow = 0;
+      clearChargeUI(p);
+    });
+
+    clashEffectTimer = 0;
+    wallFlashTimer = 0;
+    screenShakeTimer = 0;
+    particles = [];
+    floatingTexts = [];
+    gameOver = false;
+  }
+
+  function flashButton(btnId) {
+    const el = document.getElementById(btnId);
+    if (!el) return;
+    el.classList.add('pressed');
+    setTimeout(() => el.classList.remove('pressed'), 100);
+  }
+
+  // 일반 공격 실행
+  function executeNormalAttack(p) {
+    if (gameOver) return;
+    clearChargeUI(p);
+    p.state = 'attack';
+    p.isChargedAttack = false;
+    p.stateTimer = p.attackDuration;
+    p.aiWindup = 0;
+    p.guardVisualTimer = 0;
+    p.swingDir = -p.swingDir;
+    // 뒤잡기 버프 창이 살아있으면 추격 전진 거리 보너스 부여
+    const bonusLunge = p.backstabWindow > 0 ? 18 : 0;
+    p.y += p.dir * (p.lungeDist + bonusLunge);
+    clampPlayerY(p);
+    playSound(p.type);
+    flashButton(`${p.id}-attack`);
+  }
+
+  // 차지 공격(가드 브레이크) 실행
+  function executeChargedAttack(p) {
+    if (gameOver) return;
+    clearChargeUI(p);
+    p.state = 'attack';
+    p.isChargedAttack = true;
+    p.stateTimer = p.attackDuration + 6;
+    p.aiWindup = 0;
+    p.guardVisualTimer = 0;
+    p.swingDir = -p.swingDir;
+    p.y += p.dir * (p.lungeDist + 22);
+    clampPlayerY(p);
+    playSound('charge_release');
+    spawnParticles(canvas.width / 2, p.y + p.dir * 18, '#f59e0b', 16);
+    spawnFloatingText(canvas.width / 2, p.y - p.dir * 26, '🔥 가드 브레이크 발동!', '#fbbf24');
+    flashButton(`${p.id}-attack`);
+  }
+
+  // 공격 버튼 누름 시작 (홀드 시 차지 시작, 짧게 떼면 일반 공격)
+  function startAttackPress(p) {
+    if (gameOver || p.state !== 'idle') return;
+    p.state = 'charge';
+    p.isHoldingAttack = true;
+    p.chargeTimer = 0;
+    p.aiWindup = 0;
+    p.guardVisualTimer = 0;
+    const btn = document.getElementById(`${p.id}-attack`);
+    if (btn) btn.classList.add('charging');
+    playSound('charge_start');
+  }
+
+  // 공격 버튼 뗌 (0.5초 미만이면 즉시 일반 공격 발동)
+  function endAttackPress(p) {
+    if (!p.isHoldingAttack) return;
+    if (p.state === 'charge') {
+      if (p.chargeTimer >= CHARGE_THRESHOLD_FRAMES) {
+        executeChargedAttack(p);
+      } else {
+        executeNormalAttack(p);
+      }
+    } else {
+      clearChargeUI(p);
+    }
+  }
+
+  function handleEvade(p) {
+    if (gameOver || p.state === 'stagger') return;
+    const now = Date.now();
+    p.aiWindup = 0;
+    p.guardVisualTimer = 0;
+
+    // 차지 도중에도 회피/구르기로 즉시 캔슬 가능
+    if (p.state === 'charge') {
+      clearChargeUI(p);
+      p.state = 'idle';
+    }
+
+    if (now - p.lastEvadeTime < 300 && (p.state === 'idle' || p.state === 'backstep')) {
+      p.state = 'roll';
+      p.stateTimer = 22;
+      p.lastEvadeTime = 0;
+      playSound('roll');
+      flashButton(`${p.id}-evade`);
+    } else if (p.state === 'idle') {
+      p.state = 'backstep';
+      p.stateTimer = 12;
+      p.lastEvadeTime = now;
+      playSound('backstep');
+      flashButton(`${p.id}-evade`);
+    }
+  }
+
+  // 공격 버튼 홀드/릴리즈 바인딩
+  function bindAttackButton(elementId, player) {
+    const el = document.getElementById(elementId);
+    let lastTouchTime = 0;
+
+    el.addEventListener('touchstart', (e) => {
+      e.preventDefault();
+      lastTouchTime = Date.now();
+      startAttackPress(player);
+    }, { passive: false });
+
+    el.addEventListener('touchend', (e) => {
+      e.preventDefault();
+      lastTouchTime = Date.now();
+      endAttackPress(player);
+    }, { passive: false });
+
+    el.addEventListener('touchcancel', (e) => {
+      e.preventDefault();
+      endAttackPress(player);
+    }, { passive: false });
+
+    el.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      if (Date.now() - lastTouchTime < 450) return;
+      startAttackPress(player);
+    });
+
+    el.addEventListener('mouseup', (e) => {
+      e.preventDefault();
+      if (Date.now() - lastTouchTime < 450) return;
+      endAttackPress(player);
+    });
+
+    el.addEventListener('mouseleave', () => {
+      if (player.isHoldingAttack) endAttackPress(player);
+    });
+  }
+
+  function bindEvadeButton(elementId, callback) {
+    const el = document.getElementById(elementId);
+    let lastTouchTime = 0;
+    el.addEventListener('touchstart', (e) => {
+      e.preventDefault();
+      lastTouchTime = Date.now();
+      callback();
+    }, { passive: false });
+    el.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      if (Date.now() - lastTouchTime < 450) return;
+      callback();
+    });
+  }
+
+  bindAttackButton('p1-attack', players.p1);
+  bindEvadeButton('p1-evade', () => handleEvade(players.p1));
+  bindAttackButton('p2-attack', players.p2);
+  bindEvadeButton('p2-evade', () => handleEvade(players.p2));
+
+  window.addEventListener('keydown', (e) => {
+    if (e.repeat) return;
+    if (e.key === 'ArrowRight') startAttackPress(players.p1);
+    if (e.key === 'ArrowLeft') handleEvade(players.p1);
+    if (e.key === 'a' || e.key === 'A') startAttackPress(players.p2);
+    if (e.key === 'd' || e.key === 'D') handleEvade(players.p2);
+    if (e.key === 'c' || e.key === 'C') cycleCharacterSwap();
+    if (e.key === 'r' || e.key === 'R') resetRound();
+  });
+
+  window.addEventListener('keyup', (e) => {
+    if (e.key === 'ArrowRight') endAttackPress(players.p1);
+    if (e.key === 'a' || e.key === 'A') endAttackPress(players.p2);
+  });
+
+  // 테스트 패널 버튼 이벤트
+  const btnAi = document.getElementById('btn-ai');
+  const btnAiDiff = document.getElementById('btn-ai-diff');
+
+  function syncAiButtons() {
+    if (aiMode === 'none') {
+      btnAi.innerText = '모드: 2인 로컬';
+      btnAi.classList.remove('active');
+      btnAiDiff.style.opacity = '0.45';
+    } else if (aiMode === 'p2') {
+      btnAi.innerText = aiDifficulty === 'easy' ? '모드: 2P 연습봇' : '모드: 2P 실전봇';
+      btnAi.classList.add('active');
+      btnAiDiff.style.opacity = '1';
+    } else {
+      btnAi.innerText = aiDifficulty === 'easy' ? '모드: 1P 연습봇' : '모드: 1P 실전봇';
+      btnAi.classList.add('active');
+      btnAiDiff.style.opacity = '1';
+    }
+
+    if (aiDifficulty === 'easy') {
+      btnAiDiff.innerText = 'AI: 쉬움(천천히)';
+      btnAiDiff.classList.add('easy-bot');
+      btnAiDiff.classList.remove('active');
+    } else {
+      btnAiDiff.innerText = 'AI: 보통(빠름)';
+      btnAiDiff.classList.remove('easy-bot');
+      btnAiDiff.classList.add('active');
+    }
+  }
+
+  btnAi.addEventListener('click', () => {
+    if (aiMode === 'p2') aiMode = 'p1';
+    else if (aiMode === 'p1') aiMode = 'none';
+    else aiMode = 'p2';
+    syncAiButtons();
+  });
+
+  btnAiDiff.addEventListener('click', () => {
+    aiDifficulty = aiDifficulty === 'easy' ? 'normal' : 'easy';
+    if (aiMode === 'none') aiMode = 'p2';
+    syncAiButtons();
+  });
+
+  document.getElementById('btn-swap').addEventListener('click', () => {
+    cycleCharacterSwap();
+  });
+
+  const btnDebug = document.getElementById('btn-debug');
+  btnDebug.addEventListener('click', () => {
+    showDebug = !showDebug;
+    btnDebug.innerText = `판정가이드: ${showDebug ? 'ON' : 'OFF'}`;
+    btnDebug.classList.toggle('active', showDebug);
+  });
+
+  const btnSpeed = document.getElementById('btn-speed');
+  btnSpeed.addEventListener('click', () => {
+    if (speedScale === 1.0) speedScale = 0.5;
+    else if (speedScale === 0.5) speedScale = 0.25;
+    else speedScale = 1.0;
+    btnSpeed.innerText = `배속: ${speedScale}x`;
+    btnSpeed.classList.toggle('active', speedScale !== 1.0);
+  });
+
+  const btnSound = document.getElementById('btn-sound');
+  btnSound.addEventListener('click', () => {
+    soundEnabled = !soundEnabled;
+    btnSound.innerText = `효과음: ${soundEnabled ? 'ON' : 'OFF'}`;
+    btnSound.classList.toggle('active', soundEnabled);
+  });
+
+  document.getElementById('btn-reset').addEventListener('click', () => {
+    players.p1.score = 0;
+    players.p2.score = 0;
+    updateScore();
+    resetRound();
+  });
+
+  // 좌측(HUD) 및 우측(TEST LAB) 메뉴 열고 닫기 제어
+  const hudEl = document.getElementById('hud');
+  const testPanelEl = document.getElementById('test-panel');
+  const btnOpenHud = document.getElementById('btn-open-hud');
+  const btnCloseHud = document.getElementById('btn-close-hud');
+  const btnOpenPanel = document.getElementById('btn-open-panel');
+  const btnClosePanel = document.getElementById('btn-close-panel');
+
+  function toggleHudMenu(forceOpen) {
+    const isCollapsed = forceOpen !== undefined ? !forceOpen : !hudEl.classList.contains('collapsed');
+    hudEl.classList.toggle('collapsed', isCollapsed);
+    btnOpenHud.classList.toggle('hidden-tab', !isCollapsed);
+  }
+
+  function toggleRightPanel(forceOpen) {
+    const isCollapsed = forceOpen !== undefined ? !forceOpen : !testPanelEl.classList.contains('collapsed');
+    testPanelEl.classList.toggle('collapsed', isCollapsed);
+    btnOpenPanel.classList.toggle('hidden-tab', !isCollapsed);
+  }
+
+  btnCloseHud.addEventListener('click', () => toggleHudMenu(false));
+  btnOpenHud.addEventListener('click', () => toggleHudMenu(true));
+  btnClosePanel.addEventListener('click', () => toggleRightPanel(false));
+  btnOpenPanel.addEventListener('click', () => toggleRightPanel(true));
+
+  function isAttackActive(p) {
+    const activeFrames = p.isChargedAttack ? p.attackActive + 2 : p.attackActive;
+    const totalDuration = p.isChargedAttack ? p.attackDuration + 6 : p.attackDuration;
+    return p.state === 'attack' && p.stateTimer > (totalDuration - activeFrames);
+  }
+
+  // AI 스파링 로직 (가드 브레이크, 뒤잡기, 스턴 처형 포함)
+  function updateAI(bot, opponent) {
+    if (gameOver || bot.state === 'stagger') return;
+
+    const dist = Math.abs(bot.y - opponent.y);
+    const effectiveReach = bot.height / 2 + bot.lungeDist + bot.attackDist + opponent.height / 2;
+    const oppActive = isAttackActive(opponent);
+    const oppRecovery = opponent.state === 'attack' && !oppActive;
+
+    // 봇이 차지 중일 때 목표 시간 도달 시 자동 발동
+    if (bot.state === 'charge') {
+      return;
+    }
+
+    // [쉬움(천천히) 연습용 AI 봇]
+    if (aiDifficulty === 'easy') {
+      if (bot.state !== 'idle') {
+        bot.aiWindup = 0;
+        return;
+      }
+
+      if (bot.aiWindup > 0) {
+        bot.aiWindup--;
+        if (bot.aiWindup === 0) {
+          executeNormalAttack(bot);
+          bot.aiCooldown = 62;
+        }
+        return;
+      }
+
+      // 상대가 가드 붕괴(Stagger) 상태면 약간의 여유 후 처형 공격
+      if (opponent.state === 'stagger' && dist <= effectiveReach + 20) {
+        if (opponent.stateTimer < STAGGER_DURATION_FRAMES - 18) {
+          executeNormalAttack(bot);
+          bot.aiCooldown = 50;
+          return;
+        }
+      }
+
+      if (dist > effectiveReach * 0.88) {
+        bot.y += bot.dir * 1.15;
+        clampPlayerY(bot);
+      } else if (dist < 62) {
+        bot.y -= bot.dir * 0.85;
+        clampPlayerY(bot);
+      }
+
+      if (bot.aiCooldown > 0) {
+        bot.aiCooldown--;
+        return;
+      }
+
+      if (oppActive && dist <= opponent.attackDist + opponent.height + 15) {
+        if (Math.random() < 0.2) {
+          handleEvade(bot);
+          bot.aiCooldown = 50;
+        }
+        return;
+      }
+
+      if (dist <= effectiveReach + 12) {
+        if (Math.random() < 0.08) {
+          bot.aiWindup = 18;
+        } else if (Math.random() < 0.03) {
+          // 가끔 차지 공격(가드 브레이크) 시연
+          startAttackPress(bot);
+          bot.aiCooldown = 65;
+        } else if (Math.random() < 0.03) {
+          handleEvade(bot);
+          bot.aiCooldown = 48;
+        }
+      } else if (dist > effectiveReach + 45 && Math.random() < 0.02) {
+        bot.lastEvadeTime = Date.now() - 100;
+        handleEvade(bot);
+        bot.aiCooldown = 70;
+      }
+      return;
+    }
+
+    // [보통(실전용) AI 봇]
+    if (bot.aiCooldown > 0) {
+      bot.aiCooldown--;
+      return;
+    }
+
+    // 1) 상대가 스턴(Stagger)이거나 등(Backstab)을 보였거나 후딜레이 중이면 즉시 공격!
+    const oppBackExposed = ((bot.y - opponent.y) * opponent.dir) < 0;
+    if (bot.state === 'idle' && (opponent.state === 'stagger' || oppBackExposed || oppRecovery) && dist <= effectiveReach + 18) {
+      executeNormalAttack(bot);
+      bot.aiCooldown = 14;
+      return;
+    }
+
+    // 2) 상대가 차지(가드 브레이크)를 모으고 있으면 즉시 빠른 공격으로 끊거나 구르기로 뒤잡기 시도!
+    if (bot.state === 'idle' && opponent.state === 'charge' && dist <= effectiveReach + 25) {
+      if (dist <= 135 && Math.random() < 0.55) {
+        bot.lastEvadeTime = Date.now() - 100;
+        handleEvade(bot);
+        bot.aiCooldown = 10;
+      } else {
+        executeNormalAttack(bot);
+        bot.aiCooldown = 15;
+      }
+      return;
+    }
+
+    if (oppActive && dist <= opponent.attackDist + opponent.height + 20) {
+      if (Math.random() < 0.4) {
+        bot.lastEvadeTime = Date.now() - 100;
+        handleEvade(bot);
+        bot.aiCooldown = 12;
+        return;
+      }
+    }
+
+    if (bot.state === 'idle') {
+      if (opponent.state === 'idle' && dist <= effectiveReach - 10 && Math.random() < 0.07) {
+        // 상대가 방어만 굳히고 있으면 차지 공격(가드 브레이크) 시도
+        startAttackPress(bot);
+        bot.aiCooldown = 25;
+      } else if (dist <= 125 && Math.random() < 0.08) {
+        // 근접 시 구르기로 상대 뒤로 넘어가 뒤잡기(Backstab) 노리기
+        bot.lastEvadeTime = Date.now() - 100;
+        handleEvade(bot);
+        bot.aiCooldown = 10;
+      } else if (dist <= effectiveReach - 8 && Math.random() < 0.1) {
+        executeNormalAttack(bot);
+        bot.aiCooldown = 18;
+      } else if (dist > effectiveReach + 40 && Math.random() < 0.06) {
+        bot.lastEvadeTime = Date.now() - 100;
+        handleEvade(bot);
+        bot.aiCooldown = 22;
+      }
+    }
+  }
+
+  function stepSimulation() {
+    if (clashEffectTimer > 0) clashEffectTimer--;
+    if (wallFlashTimer > 0) wallFlashTimer--;
+    if (screenShakeTimer > 0) screenShakeTimer--;
+
+    for (let i = particles.length - 1; i >= 0; i--) {
+      const pt = particles[i];
+      pt.x += pt.vx;
+      pt.y += pt.vy;
+      pt.vx *= 0.92;
+      pt.vy *= 0.92;
+      pt.life--;
+      if (pt.life <= 0) particles.splice(i, 1);
+    }
+
+    for (let i = floatingTexts.length - 1; i >= 0; i--) {
+      const ft = floatingTexts[i];
+      ft.y -= 1.05;
+      ft.life--;
+      if (ft.life <= 0) floatingTexts.splice(i, 1);
+    }
+
+    if (gameOver) return;
+
+    const p1 = players.p1;
+    const p2 = players.p2;
+
+    if (p1.guardVisualTimer > 0) p1.guardVisualTimer--;
+    if (p2.guardVisualTimer > 0) p2.guardVisualTimer--;
+    if (p1.backstabWindow > 0) p1.backstabWindow--;
+    if (p2.backstabWindow > 0) p2.backstabWindow--;
+
+    if (aiMode === 'p2') updateAI(p2, p1);
+    if (aiMode === 'p1') updateAI(p1, p2);
+
+    // [시선 자동 갱신 & 뒤잡기(Backstab)용 시선 전환 딜레이]
+    // 상대가 구르기 등으로 내 등 뒤로 넘어갔을 때, 즉시 0프레임 만에 돌아보지 않고
+    // TURN_AROUND_DELAY_FRAMES(22F) 동안 등이 노출된 뒤 돌아보도록 처리
+    [
+      [p1, p2],
+      [p2, p1]
+    ].forEach(([p, opp]) => {
+      const desiredDir = (opp.y < p.y) ? -1 : 1;
+      if (p.state === 'idle') {
+        if (p.dir !== desiredDir) {
+          if (p.turnTimer <= 0) {
+            p.turnTimer = TURN_AROUND_DELAY_FRAMES;
+          } else {
+            p.turnTimer--;
+            if (p.turnTimer <= 0) {
+              p.dir = desiredDir;
+            }
+          }
+        } else {
+          p.turnTimer = 0;
+        }
+      } else if (p.state === 'charge') {
+        // 차지 중에도 이미 바라보던 방향 유지
+        p.turnTimer = 0;
+      }
+    });
+
+    [p1, p2].forEach(p => {
+      const opp = p.id === 'p1' ? p2 : p1;
+      const isEasyBot = (aiDifficulty === 'easy') && ((aiMode === 'p2' && p.id === 'p2') || (aiMode === 'p1' && p.id === 'p1'));
+      const rollSpeed = isEasyBot ? 9.5 : 13;
+      const backstepSpeed = isEasyBot ? 5.2 : 7;
+
+      if (p.state === 'charge') {
+        p.chargeTimer++;
+        if (p.chargeTimer % 4 === 0) {
+          spawnParticles(canvas.width / 2 + (Math.random() - 0.5) * 28, p.y + (Math.random() - 0.5) * 28, '#f59e0b', 2);
+        }
+        // 0.5초(30프레임) 이상 홀드 시 자동으로 차지 공격(가드 브레이크) 발동!
+        if (p.chargeTimer >= CHARGE_THRESHOLD_FRAMES) {
+          executeChargedAttack(p);
+        }
+      } else if (p.state !== 'idle') {
+        const prevState = p.state;
+        p.stateTimer--;
+        if (p.state === 'roll') p.y += p.dir * rollSpeed;
+        else if (p.state === 'backstep') p.y -= p.dir * backstepSpeed;
+
+        if (p.stateTimer <= 0) {
+          p.state = 'idle';
+          p.isChargedAttack = false;
+          // 구르기가 끝난 순간에는 자신이 상대를 즉시 바라보며, 상대 등 뒤로 넘어갔다면 뒤잡기 보너스 윈도우 활성화!
+          if (prevState === 'roll') {
+            p.dir = (opp.y < p.y) ? -1 : 1;
+            p.turnTimer = 0;
+            const crossedBehind = ((p.y - opp.y) * opp.dir) < 0;
+            if (crossedBehind) {
+              p.backstabWindow = 28;
+              spawnFloatingText(canvas.width / 2, p.y - p.dir * 26, '⚡ 뒤잡기 찬스!', '#f87171');
+            }
+          }
+        }
+      }
+      clampPlayerY(p);
+    });
+
+    const p1Active = isAttackActive(p1);
+    const p2Active = isAttackActive(p2);
+
+    // 무기 충돌 (Clash) 판정: 양측 모두 공격 Active일 때
+    if (p1Active && p2Active) {
+      const dist = Math.abs(p1.y - p2.y);
+      if (dist <= (p1.attackDist + p2.attackDist) * 0.65) {
+        p1.state = 'idle'; p1.stateTimer = 0; p1.isChargedAttack = false;
+        p2.state = 'idle'; p2.stateTimer = 0; p2.isChargedAttack = false;
+        clashEffectTimer = 12;
+        clashColor = '#ffcc00';
+        screenShakeTimer = 8;
+        clashY = (p1.y + p2.y) / 2;
+        p1.y -= p1.dir * p1.knockbackOnClash;
+        p2.y -= p2.dir * p2.knockbackOnClash;
+        clampPlayerY(p1);
+        clampPlayerY(p2);
+        playSound('clash');
+        spawnParticles(canvas.width / 2, clashY, '#ffcc00', 22);
+        spawnFloatingText(canvas.width / 2, clashY, 'CLASH!', '#ffcc00');
+        return;
+      }
+    }
+
+    if (p1Active) checkHit(p1, p2);
+    if (p2Active && !gameOver) checkHit(p2, p1);
+  }
+
+  function triggerGuardBreakStagger(attacker, defender, reasonText, badgeColor, isWallBreak) {
+    const contactY = defender.y + defender.dir * (defender.height / 2 + 6);
+    clashEffectTimer = 14;
+    clashColor = badgeColor;
+    clashY = contactY;
+    screenShakeTimer = 12;
+
+    // 수비자 가드 붕괴 -> 긴 빈틈(Stagger / 스턴) 상태로 전환
+    defender.state = 'stagger';
+    defender.stateTimer = STAGGER_DURATION_FRAMES;
+    defender.guardVisualTimer = 0;
+    defender.aiWindup = 0;
+    clearChargeUI(defender);
+
+    // 공격자는 짧은 후딜레이만 거쳐 바로 후속 처형 공격을 넣을 수 있도록 설정
+    attacker.stateTimer = 9;
+    attacker.isChargedAttack = false;
+
+    if (isWallBreak) {
+      wallFlashTimer = 18;
+      wallFlashY = defender.y < canvas.height / 2 ? getArenaMargin() : canvas.height - getArenaMargin();
+    }
+
+    playSound('guard_break');
+    spawnParticles(canvas.width / 2, contactY, badgeColor, 26);
+    spawnParticles(canvas.width / 2, contactY, '#ffffff', 12);
+    spawnFloatingText(canvas.width / 2, defender.y, reasonText, badgeColor);
+  }
+
+  function checkHit(attacker, defender) {
+    if (defender.state === 'roll') return;
+
+    // 뒤잡기 찬스이거나 등 뒤에서 공격할 때는 판정 사거리를 소폭 강화(+16px)
+    const isBackAttack = ((attacker.y - defender.y) * defender.dir) < 0;
+    const reachBonus = (isBackAttack || attacker.backstabWindow > 0) ? 16 : 0;
+
+    const weaponStart = attacker.y + (attacker.dir * (attacker.height / 2));
+    const weaponEnd = weaponStart + (attacker.dir * (attacker.attackDist + reachBonus));
+
+    const minAtkY = Math.min(weaponStart, weaponEnd);
+    const maxAtkY = Math.max(weaponStart, weaponEnd);
+
+    const defTop = defender.y - defender.height / 2;
+    const defBottom = defender.y + defender.height / 2;
+
+    if (maxAtkY >= defTop && minAtkY <= defBottom) {
+      const isFrontalAttack = ((attacker.y - defender.y) * defender.dir) > 0;
+
+      // 1. [뒤잡기 (Backstab) 특수 판정]
+      // 상대가 오토가드(Idle) 중이더라도, 구르기 등으로 등 뒤를 잡아 공격(!isFrontalAttack)하면
+      // 오토가드를 완벽히 무시하고 즉시 처치!
+      if (!isFrontalAttack) {
+        gameOver = true;
+        attacker.score++;
+        screenShakeTimer = 18;
+        playSound('backstab');
+        spawnParticles(canvas.width / 2, defender.y, '#ef4444', 36);
+        spawnParticles(canvas.width / 2, defender.y, '#fde047', 18);
+        spawnFloatingText(canvas.width / 2, defender.y, '🗡️ BACKSTAB! (뒤잡기 처형!)', '#f87171');
+        updateScore();
+        showMessage(`${attacker.name} 득점!`, '🗡️ 뒤잡기(Backstab) 일격필살! (오토가드 무시)');
+        return;
+      }
+
+      // 2. 수비자가 대기(Idle) 상태이고 정면에서 공격을 받았을 때 (오토 가드 vs 가드 브레이크 vs 벽 가드 붕괴)
+      if (defender.state === 'idle' && defender.aiWindup === 0 && isFrontalAttack) {
+        // 2-A) [차지 공격 (가드 브레이크)]에 피격된 경우 -> 오토가드 강제 붕괴(Stagger)!
+        if (attacker.isChargedAttack) {
+          defender.y -= defender.dir * 28;
+          clampPlayerY(defender);
+          triggerGuardBreakStagger(attacker, defender, '💥 GUARD BREAK! (가드 붕괴!)', '#f59e0b', false);
+          return;
+        }
+
+        // 2-B) 일반 정면 공격에 대한 오토 가드 & 가드백 계산
+        const pushDir = -defender.dir; // 수비자가 밀려나는 방향
+        const margin = getArenaMargin();
+        const rawNextY = defender.y + pushDir * attacker.guardPushback;
+        const hitsWallOnPush = (rawNextY <= margin + 4) || (rawNextY >= canvas.height - margin - 4) || isNearArenaWall(defender, pushDir);
+
+        defender.y = rawNextY;
+        clampPlayerY(defender);
+
+        // 2-C) [구석 압박과 가드 붕괴 (Wall Stagger)]
+        // 화면 양끝 가장자리에 등배수진을 친 상태에서 방어하면 밀려날 공간이 없어 가드가 깨지며 큰 빈틈(스턴) 유발!
+        if (hitsWallOnPush) {
+          attacker.y -= attacker.dir * 12;
+          clampPlayerY(attacker);
+          triggerGuardBreakStagger(attacker, defender, '🧱 WALL STAGGER! (구석 가드 붕괴!)', '#c084fc', true);
+          return;
+        }
+
+        // 2-D) 정상 오토 가드 (가드 백)
+        const contactY = defender.y + defender.dir * (defender.height / 2 + 8);
+        clashEffectTimer = 11;
+        clashColor = '#38bdf8';
+        clashY = contactY;
+        screenShakeTimer = 6;
+
+        defender.guardVisualTimer = 12;
+        attacker.stateTimer = attacker.attackDuration - attacker.attackActive;
+        attacker.y -= attacker.dir * 16;
+        clampPlayerY(attacker);
+
+        playSound('guard');
+        spawnParticles(canvas.width / 2, contactY, '#38bdf8', 18);
+        spawnParticles(canvas.width / 2, contactY, '#fde047', 10);
+        spawnFloatingText(canvas.width / 2, defender.y - defender.dir * 26, '🛡️ AUTO GUARD! (가드백)', '#38bdf8');
+        return;
+      }
+
+      // 3. 오토 가드 불가 상태(가드 붕괴 스턴, 공격 후딜레이, 차지 모으는 중, 백스텝 도중 등) 피격 시 처치!
+      gameOver = true;
+      attacker.score++;
+      screenShakeTimer = 15;
+      playSound('hit');
+      spawnParticles(canvas.width / 2, defender.y, attacker.color, 32);
+      updateScore();
+
+      let hitDetail = '일격필살 적중!';
+      if (defender.state === 'stagger') hitDetail = '💥 가드 붕괴(Stagger) 처형 적중!';
+      else if (attacker.isChargedAttack) hitDetail = '🔥 차지 공격 일격 적중!';
+      else if (defender.state === 'charge') hitDetail = '⚡ 상대 차지 준비 카운터 적중!';
+      else if (defender.state === 'attack') hitDetail = '후딜레이 카운터 적중!';
+      else if (defender.state === 'backstep') hitDetail = '백스텝 캐치 적중!';
+      else if (defender.aiWindup > 0) hitDetail = '공격 준비 카운터 적중!';
+
+      showMessage(`${attacker.name} 득점!`, hitDetail);
+    }
+  }
+
+  // 창(Spear) 찌르기 및 차지/가드 모션 렌더링
+  function drawSpearWeapon(p, centerX) {
+    const active = isAttackActive(p);
+    const totalDur = p.isChargedAttack ? p.attackDuration + 6 : p.attackDuration;
+    const activeDur = p.isChargedAttack ? p.attackActive + 2 : p.attackActive;
+    const recoveryFrames = totalDur - activeDur;
+    const baseFrontY = p.y + p.dir * (p.height / 2);
+
+    if (p.state === 'attack' && showDebug) {
+      const startY = p.dir === -1 ? p.y - p.height / 2 - p.attackDist : p.y + p.height / 2;
+      ctx.fillStyle = p.isChargedAttack
+        ? (active ? 'rgba(245, 158, 11, 0.3)' : 'rgba(245, 158, 11, 0.1)')
+        : (active ? 'rgba(52, 152, 219, 0.22)' : 'rgba(52, 152, 219, 0.08)');
+      ctx.fillRect(centerX - p.attackWidth / 2, startY, p.attackWidth, p.attackDist);
+      if (active) {
+        ctx.strokeStyle = p.isChargedAttack ? '#fbbf24' : 'rgba(255, 255, 255, 0.45)';
+        ctx.lineWidth = 1.5;
+        ctx.strokeRect(centerX - p.attackWidth / 2, startY, p.attackWidth, p.attackDist);
+      }
+    }
+
+    if (p.state === 'idle' && p.guardVisualTimer > 0) {
+      const guardY = baseFrontY + p.dir * 8;
+      ctx.strokeStyle = '#e2e8f0';
+      ctx.lineWidth = 4.5;
+      ctx.beginPath();
+      ctx.moveTo(centerX - 30, guardY);
+      ctx.lineTo(centerX + 30, guardY);
+      ctx.stroke();
+
+      ctx.strokeStyle = 'rgba(56, 189, 248, 0.85)';
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.arc(centerX, p.y, 28, p.dir === -1 ? Math.PI * 1.15 : Math.PI * 0.15, p.dir === -1 ? Math.PI * 1.85 : Math.PI * 0.85);
+      ctx.stroke();
+      return;
+    }
+
+    let currentReach = 52;
+    let offsetX = p.dir === -1 ? 14 : -14;
+    let thrustGlow = 0;
+
+    if (p.state === 'charge') {
+      // 차지 중에는 창을 뒤로 바짝 당겨 기를 모으는 자세
+      const chargeRatio = Math.min(1, p.chargeTimer / CHARGE_THRESHOLD_FRAMES);
+      currentReach = 34 - chargeRatio * 12;
+      offsetX = (p.dir === -1 ? 10 : -10) + (Math.random() - 0.5) * 2.5;
+    } else if (p.state === 'attack') {
+      offsetX = 0;
+      if (active) {
+        const elapsedActive = totalDur - p.stateTimer;
+        const t = Math.min(1, (elapsedActive + 1) / 3.5);
+        const easeOut = 1 - Math.pow(1 - t, 3);
+        currentReach = 45 + (p.attackDist - 45) * easeOut;
+        thrustGlow = 1.0;
+      } else {
+        const recRatio = p.stateTimer / recoveryFrames;
+        currentReach = 42 + (p.attackDist - 42) * Math.pow(recRatio, 1.4);
+        thrustGlow = recRatio * 0.35;
+      }
+    } else if (p.state === 'backstep' || p.state === 'stagger') {
+      currentReach = 36;
+    } else if (p.state === 'roll') {
+      return;
+    }
+
+    const tipY = baseFrontY + p.dir * currentReach;
+    const buttY = p.y - p.dir * 20;
+    const spearX = centerX + offsetX;
+
+    if (p.state === 'attack' && thrustGlow > 0.1) {
+      const grad = ctx.createLinearGradient(spearX, baseFrontY, spearX, tipY);
+      if (p.isChargedAttack) {
+        grad.addColorStop(0, 'rgba(245, 158, 11, 0)');
+        grad.addColorStop(0.5, `rgba(245, 158, 11, ${0.65 * thrustGlow})`);
+        grad.addColorStop(1, `rgba(254, 240, 138, ${0.98 * thrustGlow})`);
+      } else {
+        grad.addColorStop(0, 'rgba(52, 152, 219, 0)');
+        grad.addColorStop(0.5, `rgba(52, 152, 219, ${0.45 * thrustGlow})`);
+        grad.addColorStop(1, `rgba(186, 230, 253, ${0.95 * thrustGlow})`);
+      }
+
+      const coneWidth = p.isChargedAttack ? p.attackWidth * 1.45 : p.attackWidth;
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.moveTo(spearX - coneWidth / 2, baseFrontY);
+      ctx.lineTo(spearX, tipY + p.dir * 12);
+      ctx.lineTo(spearX + coneWidth / 2, baseFrontY);
+      ctx.closePath();
+      ctx.fill();
+
+      if (active) {
+        ctx.strokeStyle = p.isChargedAttack ? 'rgba(254, 240, 138, 0.95)' : 'rgba(224, 242, 254, 0.85)';
+        ctx.lineWidth = p.isChargedAttack ? 2.2 : 1.5;
+        [-9, 9].forEach(side => {
+          ctx.beginPath();
+          ctx.moveTo(spearX + side, tipY - p.dir * 18);
+          ctx.lineTo(spearX + side * 1.45, tipY - p.dir * 68);
+          ctx.stroke();
+        });
+      }
+    }
+
+    ctx.strokeStyle = p.isChargedAttack ? '#fde047' : (active ? '#e2e8f0' : '#94a3b8');
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.moveTo(spearX, buttY);
+    ctx.lineTo(spearX, tipY - p.dir * 18);
+    ctx.stroke();
+
+    ctx.fillStyle = p.isChargedAttack ? '#f59e0b' : p.color;
+    ctx.beginPath();
+    ctx.arc(spearX, tipY - p.dir * 20, 5, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = p.isChargedAttack ? '#fef08a' : (active ? '#ffffff' : '#cbd5e1');
+    ctx.beginPath();
+    ctx.moveTo(spearX, tipY);
+    ctx.lineTo(spearX - 7, tipY - p.dir * 16);
+    ctx.lineTo(spearX, tipY - p.dir * 22);
+    ctx.lineTo(spearX + 7, tipY - p.dir * 16);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  // 검(Sword) 휘두르기 및 차지/가드 모션 렌더링
+  function drawSwordWeapon(p, centerX) {
+    const active = isAttackActive(p);
+    const totalDur = p.isChargedAttack ? p.attackDuration + 6 : p.attackDuration;
+    const activeDur = p.isChargedAttack ? p.attackActive + 2 : p.attackActive;
+    const recoveryFrames = totalDur - activeDur;
+    const pivotY = p.y + p.dir * (p.height / 2 - 2);
+
+    if (p.state === 'attack' && showDebug) {
+      const startY = p.dir === -1 ? p.y - p.height / 2 - p.attackDist : p.y + p.height / 2;
+      ctx.fillStyle = p.isChargedAttack
+        ? (active ? 'rgba(245, 158, 11, 0.25)' : 'rgba(245, 158, 11, 0.08)')
+        : (active ? 'rgba(231, 76, 60, 0.16)' : 'rgba(231, 76, 60, 0.06)');
+      ctx.fillRect(centerX - p.attackWidth / 2, startY, p.attackWidth, p.attackDist);
+      if (active) {
+        ctx.strokeStyle = p.isChargedAttack ? '#fbbf24' : 'rgba(255, 255, 255, 0.35)';
+        ctx.lineWidth = 1.5;
+        ctx.strokeRect(centerX - p.attackWidth / 2, startY, p.attackWidth, p.attackDist);
+      }
+    }
+
+    if (p.state === 'roll') return;
+
+    if (p.state === 'idle' && p.guardVisualTimer > 0) {
+      const guardY = pivotY + p.dir * 6;
+      drawSwordBlade(centerX - 22, guardY, 0.15 * p.dir, 52, true, '#38bdf8');
+      ctx.strokeStyle = 'rgba(56, 189, 248, 0.85)';
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.arc(centerX, p.y, 28, p.dir === -1 ? Math.PI * 1.15 : Math.PI * 0.15, p.dir === -1 ? Math.PI * 1.85 : Math.PI * 0.85);
+      ctx.stroke();
+      return;
+    }
+
+    const forwardAngle = p.dir === -1 ? -Math.PI / 2 : Math.PI / 2;
+    const maxSweepHalf = 1.18;
+
+    if (p.state === 'idle' || p.state === 'backstep' || p.state === 'stagger') {
+      const holdAngle = forwardAngle + (p.dir === -1 ? 0.55 : -0.55);
+      const handX = centerX + (p.dir === -1 ? 16 : -16);
+      const handY = p.y + p.dir * 6;
+      drawSwordBlade(handX, handY, holdAngle, 58, false, p.color);
+      return;
+    }
+
+    if (p.state === 'charge') {
+      // 차지 중에는 검을 뒤쪽으로 깊숙이 젖혀 기를 모으는 모션
+      const chargeRatio = Math.min(1, p.chargeTimer / CHARGE_THRESHOLD_FRAMES);
+      const windupAngle = forwardAngle - (p.swingDir || 1) * (0.85 + chargeRatio * 0.55);
+      const handX = centerX + (Math.random() - 0.5) * 2.5;
+      drawSwordBlade(handX, pivotY, windupAngle, 64, true, '#f59e0b');
+      return;
+    }
+
+    const sDir = p.swingDir || 1;
+    const startAngle = forwardAngle - maxSweepHalf * sDir;
+    const endAngle = forwardAngle + maxSweepHalf * sDir;
+
+    let currentAngle = endAngle;
+    let slashAlpha = 0;
+
+    if (active) {
+      const elapsedActive = totalDur - p.stateTimer;
+      const progress = Math.min(1, (elapsedActive + 1) / activeDur);
+      const easeOut = 1 - Math.pow(1 - progress, 2.5);
+      currentAngle = startAngle + (endAngle - startAngle) * easeOut;
+      slashAlpha = 0.95;
+    } else {
+      const recRatio = p.stateTimer / recoveryFrames;
+      currentAngle = endAngle;
+      slashAlpha = recRatio * 0.35;
+    }
+
+    if (slashAlpha > 0.05) {
+      ctx.save();
+      const anticlockwise = (endAngle - startAngle) < 0;
+      const outerR = p.attackDist;
+      const innerR = p.attackDist * 0.4;
+
+      if (p.isChargedAttack) {
+        ctx.fillStyle = active ? `rgba(245, 158, 11, ${0.55 * slashAlpha})` : `rgba(245, 158, 11, ${0.25 * slashAlpha})`;
+      } else {
+        ctx.fillStyle = active ? `rgba(231, 76, 60, ${0.42 * slashAlpha})` : `rgba(231, 76, 60, ${0.22 * slashAlpha})`;
+      }
+
+      ctx.beginPath();
+      ctx.arc(centerX, pivotY, outerR, startAngle, currentAngle, anticlockwise);
+      ctx.arc(centerX, pivotY, innerR, currentAngle, startAngle, !anticlockwise);
+      ctx.closePath();
+      ctx.fill();
+
+      ctx.strokeStyle = p.isChargedAttack
+        ? `rgba(254, 240, 138, ${slashAlpha})`
+        : (active ? `rgba(254, 226, 226, ${slashAlpha})` : `rgba(248, 113, 113, ${slashAlpha})`);
+      ctx.lineWidth = active ? 4.5 : 2;
+      ctx.beginPath();
+      ctx.arc(centerX, pivotY, outerR - 2, startAngle, currentAngle, anticlockwise);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    drawSwordBlade(centerX, pivotY, currentAngle, p.attackDist, active, p.isChargedAttack ? '#f59e0b' : p.color);
+  }
+
+  function drawSwordBlade(originX, originY, angle, length, isBright, guardColor) {
+    ctx.save();
+    ctx.translate(originX, originY);
+    ctx.rotate(angle);
+
+    ctx.fillStyle = '#475569';
+    ctx.fillRect(-10, -3, 12, 6);
+
+    ctx.fillStyle = guardColor;
+    ctx.fillRect(0, -11, 5, 22);
+
+    ctx.fillStyle = isBright ? '#ffffff' : '#e2e8f0';
+    ctx.beginPath();
+    ctx.moveTo(5, -5.5);
+    ctx.lineTo(length - 14, -4);
+    ctx.lineTo(length, 0);
+    ctx.lineTo(length - 14, 4);
+    ctx.lineTo(5, 5.5);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.strokeStyle = isBright ? '#fbbf24' : '#94a3b8';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(8, 0);
+    ctx.lineTo(length - 16, 0);
+    ctx.stroke();
+
+    ctx.restore();
+  }
+
+  function draw() {
+    ctx.save();
+    if (screenShakeTimer > 0) {
+      const mag = screenShakeTimer * 0.85;
+      ctx.translate((Math.random() - 0.5) * mag * 2, (Math.random() - 0.5) * mag * 2);
+    }
+
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    const centerX = canvas.width / 2;
+    const margin = getArenaMargin();
+
+    // 경기장 레인 배경 가이드
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.018)';
+    ctx.fillRect(centerX - 65, margin, 130, canvas.height - margin * 2);
+
+    // 상/하단 벽면 코너 압박 위험 구역(Danger Zone) 표시
+    const dangerGradTop = ctx.createLinearGradient(0, margin, 0, margin + 44);
+    dangerGradTop.addColorStop(0, 'rgba(192, 132, 252, 0.22)');
+    dangerGradTop.addColorStop(1, 'rgba(192, 132, 252, 0)');
+    ctx.fillStyle = dangerGradTop;
+    ctx.fillRect(centerX - 65, margin, 130, 44);
+
+    const dangerGradBottom = ctx.createLinearGradient(0, canvas.height - margin, 0, canvas.height - margin - 44);
+    dangerGradBottom.addColorStop(0, 'rgba(192, 132, 252, 0.22)');
+    dangerGradBottom.addColorStop(1, 'rgba(192, 132, 252, 0)');
+    ctx.fillStyle = dangerGradBottom;
+    ctx.fillRect(centerX - 65, canvas.height - margin - 44, 130, 44);
+
+    // 상/하단 한계 벽선 (margin)
+    ctx.strokeStyle = wallFlashTimer > 0 ? '#c084fc' : '#3b3b44';
+    ctx.lineWidth = wallFlashTimer > 0 ? 4 : 2;
+    ctx.beginPath();
+    ctx.moveTo(0, margin); ctx.lineTo(canvas.width, margin);
+    ctx.moveTo(0, canvas.height - margin); ctx.lineTo(canvas.width, canvas.height - margin);
+    ctx.stroke();
+
+    // 중앙 점선
+    ctx.strokeStyle = '#333';
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([8, 8]);
+    ctx.beginPath();
+    ctx.moveTo(0, canvas.height / 2);
+    ctx.lineTo(canvas.width, canvas.height / 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // 두 캐릭터 간 현재 거리 표시
+    if (showDebug) {
+      const dist = Math.round(Math.abs(players.p1.y - players.p2.y));
+      const midY = (players.p1.y + players.p2.y) / 2;
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.14)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(centerX + 82, players.p1.y);
+      ctx.lineTo(centerX + 82, players.p2.y);
+      ctx.stroke();
+
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.55)';
+      ctx.font = '600 11px sans-serif';
+      ctx.textAlign = 'left';
+      ctx.fillText(`거리: ${dist}px`, centerX + 88, midY + 4);
+    }
+
+    [players.p1, players.p2].forEach(p => {
+      const opp = p.id === 'p1' ? players.p2 : players.p1;
+      const isBackExposed = ((opp.y - p.y) * p.dir) < 0;
+
+      if (showDebug && (p.state === 'idle' || p.state === 'charge')) {
+        const maxReachY = p.y + p.dir * (p.height / 2 + p.lungeDist + p.attackDist);
+        ctx.strokeStyle = p.type === 'spear' ? 'rgba(52, 152, 219, 0.35)' : 'rgba(231, 76, 60, 0.35)';
+        ctx.setLineDash([4, 4]);
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(centerX - p.attackWidth / 2 - 6, maxReachY);
+        ctx.lineTo(centerX + p.attackWidth / 2 + 6, maxReachY);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+
+      if (p.type === 'spear') {
+        drawSpearWeapon(p, centerX);
+      } else {
+        drawSwordWeapon(p, centerX);
+      }
+
+      const isRecovery = (p.state === 'attack' && !isAttackActive(p));
+      ctx.save();
+      let shakeOffsetX = 0;
+      if (p.state === 'stagger') {
+        shakeOffsetX = Math.sin(p.stateTimer * 0.8) * 4;
+      } else if (p.state === 'charge') {
+        shakeOffsetX = (Math.random() - 0.5) * 3;
+      }
+      ctx.translate(centerX + shakeOffsetX, p.y);
+
+      if (p.state === 'roll') {
+        const rollProgress = (22 - p.stateTimer) / 22;
+        ctx.rotate(rollProgress * Math.PI * 2 * p.dir);
+      }
+
+      ctx.fillStyle = p.state === 'roll' ? '#8e9aaf' : (p.state === 'stagger' ? '#64748b' : p.color);
+      ctx.globalAlpha = isRecovery ? 0.55 : 1.0;
+      ctx.beginPath();
+      ctx.roundRect(-p.width / 2, -p.height / 2, p.width, p.height, 8);
+      ctx.fill();
+      ctx.globalAlpha = 1.0;
+
+      // 상태별 외곽 테두리 강조
+      if (p.state === 'roll') {
+        ctx.strokeStyle = '#f1c40f';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(-p.width / 2 - 2, -p.height / 2 - 2, p.width + 4, p.height + 4);
+      } else if (p.state === 'charge') {
+        ctx.strokeStyle = '#f59e0b';
+        ctx.lineWidth = 2.5;
+        ctx.strokeRect(-p.width / 2 - 3, -p.height / 2 - 3, p.width + 6, p.height + 6);
+      } else if (p.state === 'stagger') {
+        ctx.strokeStyle = '#ef4444';
+        ctx.lineWidth = 2.5;
+        ctx.strokeRect(-p.width / 2 - 3, -p.height / 2 - 3, p.width + 6, p.height + 6);
+      } else if (p.guardVisualTimer > 0) {
+        ctx.strokeStyle = '#38bdf8';
+        ctx.lineWidth = 2.5;
+        ctx.strokeRect(-p.width / 2 - 2, -p.height / 2 - 2, p.width + 4, p.height + 4);
+      }
+
+      // 시선 방향 바이저(Visor) 마커
+      ctx.fillStyle = '#fff';
+      const markerY = p.dir * (p.height / 2 - 5);
+      ctx.fillRect(-9, markerY - 2, 18, 4);
+
+      // 등 뒤가 노출되었을 때 반대편(등 쪽)에 붉은 타겟 마커 표시
+      if (isBackExposed) {
+        const backY = -p.dir * (p.height / 2 + 4);
+        ctx.fillStyle = '#ef4444';
+        ctx.fillRect(-10, backY - 2, 20, 4);
+      }
+      ctx.restore();
+
+      // 차지 게이지 바 (0.5초 홀드 진행도 표시)
+      if (p.state === 'charge') {
+        const ratio = Math.min(1, p.chargeTimer / CHARGE_THRESHOLD_FRAMES);
+        const barW = 46;
+        const barH = 6;
+        const barX = centerX - barW / 2;
+        const barY = p.y - p.dir * 28 - barH / 2;
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+        ctx.fillRect(barX - 1, barY - 1, barW + 2, barH + 2);
+        ctx.fillStyle = ratio > 0.8 ? '#fef08a' : '#f59e0b';
+        ctx.fillRect(barX, barY, barW * ratio, barH);
+
+        ctx.fillStyle = '#fbbf24';
+        ctx.font = '800 12px sans-serif';
+        ctx.textAlign = 'left';
+        ctx.fillText('🔥 가드브레이크 차지중...', centerX + 26, p.y + 4);
+      }
+
+      // 스턴(Stagger / 가드 붕괴) 상태일 때 회전하는 별 이펙트 및 텍스트
+      if (p.state === 'stagger') {
+        const angleBase = Date.now() * 0.008;
+        for (let i = 0; i < 3; i++) {
+          const a = angleBase + (i * Math.PI * 2) / 3;
+          const sx = centerX + Math.cos(a) * 18;
+          const sy = p.y + Math.sin(a) * 8 - p.dir * 24;
+          ctx.fillStyle = '#fde047';
+          ctx.beginPath();
+          ctx.arc(sx, sy, 3.5, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.fillStyle = '#f87171';
+        ctx.font = '800 13px sans-serif';
+        ctx.textAlign = 'left';
+        ctx.fillText(`💫 가드붕괴 무방비! (${p.stateTimer}F)`, centerX + 26, p.y + 4);
+      } else if (isBackExposed && p.state === 'idle') {
+        ctx.fillStyle = '#f87171';
+        ctx.font = '800 12px sans-serif';
+        ctx.textAlign = 'left';
+        ctx.fillText(`⚠️ 등 노출! 뒤돌기 ${p.turnTimer}F`, centerX + 26, p.y + 4);
+      } else if (p.aiWindup > 0) {
+        ctx.fillStyle = '#facc15';
+        ctx.font = '800 14px sans-serif';
+        ctx.textAlign = 'left';
+        ctx.fillText('! 공격준비', centerX + 26, p.y + 5);
+      } else if (isNearArenaWall(p, -p.dir) && p.state === 'idle') {
+        ctx.fillStyle = '#c084fc';
+        ctx.font = '700 11px sans-serif';
+        ctx.textAlign = 'left';
+        ctx.fillText('🧱 구석 위기 (가드시 붕괴)', centerX + 26, p.y + 4);
+      }
+
+      // 좌측 디버그 상태 및 잔여 프레임 라벨
+      if (showDebug) {
+        let stateLabel = 'IDLE (오토가드 ON)';
+        let labelColor = '#9ca3af';
+        if (p.state === 'stagger') {
+          stateLabel = `STAGGER (${p.stateTimer}F)`;
+          labelColor = '#ef4444';
+        } else if (p.state === 'charge') {
+          stateLabel = `CHARGE (${p.chargeTimer}/${CHARGE_THRESHOLD_FRAMES}F)`;
+          labelColor = '#f59e0b';
+        } else if (isBackExposed && p.state === 'idle') {
+          stateLabel = `BACK EXPOSED (${p.turnTimer}F)`;
+          labelColor = '#f87171';
+        } else if (p.guardVisualTimer > 0 && p.state === 'idle') {
+          stateLabel = 'GUARD BACK!';
+          labelColor = '#38bdf8';
+        } else if (p.state === 'attack') {
+          const totalDur = p.isChargedAttack ? p.attackDuration + 6 : p.attackDuration;
+          const activeDur = p.isChargedAttack ? p.attackActive + 2 : p.attackActive;
+          if (isAttackActive(p)) {
+            stateLabel = `${p.isChargedAttack ? 'BREAK ' : ''}ACTIVE (${p.stateTimer - (totalDur - activeDur)}F)`;
+            labelColor = p.isChargedAttack ? '#fbbf24' : '#ffcc00';
+          } else {
+            stateLabel = `RECOVERY (${p.stateTimer}F)`;
+            labelColor = '#f87171';
+          }
+        } else if (p.state === 'roll') {
+          stateLabel = `ROLL i-FRAME (${p.stateTimer}F)`;
+          labelColor = '#facc15';
+        } else if (p.state === 'backstep') {
+          stateLabel = `BACKSTEP (${p.stateTimer}F)`;
+          labelColor = '#60a5fa';
+        } else if (p.aiWindup > 0) {
+          stateLabel = `WINDUP (${p.aiWindup}F)`;
+          labelColor = '#fbbf24';
+        }
+
+        ctx.fillStyle = labelColor;
+        ctx.font = '700 11px sans-serif';
+        ctx.textAlign = 'right';
+        ctx.fillText(stateLabel, centerX - 28, p.y + 4);
+      }
+    });
+
+    // 무기 충돌(Clash) 및 가드/브레이크 스파크 링 이펙트
+    if (clashEffectTimer > 0) {
+      ctx.strokeStyle = clashColor;
+      ctx.lineWidth = 3.5;
+      ctx.beginPath();
+      ctx.arc(centerX, clashY, (15 - clashEffectTimer) * 4.8, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+
+    // 벽 가드 붕괴 시 벽면 충격파 연출
+    if (wallFlashTimer > 0) {
+      ctx.strokeStyle = `rgba(192, 132, 252, ${wallFlashTimer / 18})`;
+      ctx.lineWidth = 5;
+      ctx.beginPath();
+      ctx.moveTo(centerX - 90, wallFlashY);
+      ctx.lineTo(centerX + 90, wallFlashY);
+      ctx.stroke();
+    }
+
+    // 파티클 렌더링
+    particles.forEach(pt => {
+      ctx.fillStyle = pt.color;
+      ctx.globalAlpha = Math.max(0, pt.life / pt.maxLife);
+      ctx.fillRect(pt.x - pt.size / 2, pt.y - pt.size / 2, pt.size, pt.size);
+    });
+    ctx.globalAlpha = 1.0;
+
+    // 플로팅 텍스트 렌더링
+    floatingTexts.forEach(ft => {
+      ctx.save();
+      ctx.fillStyle = ft.color;
+      ctx.globalAlpha = Math.max(0, ft.life / ft.maxLife);
+      ctx.font = '800 14px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(ft.text, ft.x, ft.y);
+      ctx.restore();
+    });
+
+    ctx.restore();
+  }
+
+  function gameLoop() {
+    frameAccumulator += speedScale;
+    while (frameAccumulator >= 1.0) {
+      stepSimulation();
+      frameAccumulator -= 1.0;
+    }
+    draw();
+    requestAnimationFrame(gameLoop);
+  }
+
+  window.onload = () => {
+    applyWeaponSpec(players.p1, 'spear');
+    applyWeaponSpec(players.p2, 'sword');
+    updateScore();
+    syncAiButtons();
+    resize();
+    gameLoop();
+  };
+</script>
+</body>
+</html>
